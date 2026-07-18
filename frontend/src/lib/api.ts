@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const BASE_URL = '/api';
+const BASE_URL = 'https://recoverease.onrender.com/api';
 
 export const api = axios.create({
   baseURL: BASE_URL,
