@@ -1,0 +1,42 @@
+version: '3.9'
+
+# RecoverEase — Docker Compose
+#
+# This file bundles the frontend and backend application containers only.
+# The database is hosted on Supabase (managed PostgreSQL) — no local
+# database container is included or required.
+#
+# Before running:
+#   1. Copy backend/.env.example to backend/.env
+#   2. Fill in your Supabase DATABASE_URL and DIRECT_URL
+#   3. Add your ANTHROPIC_API_KEY (optional)
+#
+# Then run: docker-compose up --build
+
+services:
+  # ─── Backend API ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: recoverease_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      FRONTEND_URL: http://localhost:5173
+    ports:
+      - "3001:3001"
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: recoverease_web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"

@@ -1,0 +1,420 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Core Auth ───────────────────────────────────────────────────────────────
+
+enum UserRole {
+  doctor
+  patient
+  admin
+}
+
+model UserAccount {
+  userId           Int       @id @default(autoincrement())
+  userEmail        String    @unique @db.VarChar(255)
+  userPasswordHash String    @db.VarChar(255)
+  userRole         UserRole
+  userCreatedAt    DateTime  @default(now())
+  userUpdatedAt    DateTime? @updatedAt
+
+  // Relations
+  doctor               Doctor?
+  patient              Patient?
+  admin                Admin?
+  notifications        Notification[]
+  rescheduleRequests   RescheduleRequest[]
+  reports              Report[]
+  auditLogs            AuditLog[]
+
+  @@map("user_account")
+}
+
+// ─── Role Profiles ────────────────────────────────────────────────────────────
+
+model Doctor {
+  docId            Int       @id @default(autoincrement())
+  userId           Int       @unique
+  docFirstName     String    @db.VarChar(100)
+  docLastName      String    @db.VarChar(100)
+  docSpecialization String?  @db.VarChar(100)
+  docLicenseNo     String    @unique @db.VarChar(50)
+  docContactNo     String?   @db.VarChar(20)
+  docIsActive      Boolean   @default(true)
+  docCreatedAt     DateTime  @default(now())
+
+  // Relations
+  user             UserAccount         @relation(fields: [userId], references: [userId])
+  patients         Patient[]
+  treatmentPlans   TreatmentPlan[]
+  prescriptions    Prescription[]
+  doctorNotes      DoctorNote[]
+  appointments     Appointment[]
+
+  @@map("doctor")
+}
+
+model Patient {
+  patId                   Int       @id @default(autoincrement())
+  userId                  Int       @unique
+  docId                   Int
+  patFirstName            String    @db.VarChar(100)
+  patLastName             String    @db.VarChar(100)
+  patBirthDate            DateTime  @db.Date
+  patGender               PatientGender?
+  patContactNo            String?   @db.VarChar(20)
+  patAddress              String?   @db.VarChar(255)
+  patConsentAt            DateTime?
+  patCreatedAt            DateTime  @default(now())
+  patStatus               PatientStatus @default(active)
+  patReminderPreferredTime DateTime? @db.Time()
+  patReminderIsEnabled    Boolean   @default(true)
+
+  // Relations
+  user             UserAccount     @relation(fields: [userId], references: [userId])
+  doctor           Doctor          @relation(fields: [docId], references: [docId])
+  treatmentPlans   TreatmentPlan[]
+  prescriptions    Prescription[]
+  recoveryLogs     RecoveryLog[]
+  doctorNotes      DoctorNote[]
+  appointments     Appointment[]
+  chatSessions     ChatSession[]
+  reports          Report[]
+
+  @@map("patient")
+}
+
+enum PatientGender {
+  male
+  female
+  other
+}
+
+enum PatientStatus {
+  active
+  inactive
+  discharged
+}
+
+model Admin {
+  adminId        Int      @id @default(autoincrement())
+  userId         Int      @unique
+  adminFirstName String   @db.VarChar(100)
+  adminLastName  String   @db.VarChar(100)
+  adminCreatedAt DateTime @default(now())
+
+  // Relations
+  user            UserAccount      @relation(fields: [userId], references: [userId])
+  announcements   Announcement[]
+  systemSettings  SystemSetting[]
+
+  @@map("admin")
+}
+
+// ─── Treatment ────────────────────────────────────────────────────────────────
+
+model TreatmentPlan {
+  treatmentPlanId          Int                  @id @default(autoincrement())
+  patId                    Int
+  docId                    Int
+  treatmentPlanTitle       String               @db.VarChar(150)
+  treatmentPlanDescription String?
+  treatmentPlanStartDate   DateTime             @db.Date
+  treatmentPlanEndDate     DateTime?            @db.Date
+  treatmentPlanStatus      TreatmentPlanStatus  @default(active)
+  treatmentPlanCreatedAt   DateTime             @default(now())
+  treatmentPlanUpdatedAt   DateTime?            @updatedAt
+
+  // Relations
+  patient        Patient         @relation(fields: [patId], references: [patId])
+  doctor         Doctor          @relation(fields: [docId], references: [docId])
+  treatmentGoals TreatmentGoal[]
+
+  @@map("treatment_plan")
+}
+
+enum TreatmentPlanStatus {
+  active
+  completed
+  discontinued
+}
+
+model TreatmentGoal {
+  treatmentGoalId          Int                @id @default(autoincrement())
+  treatmentPlanId          Int
+  treatmentGoalDescription String             @db.VarChar(255)
+  treatmentGoalTargetDate  DateTime?          @db.Date
+  treatmentGoalStatus      TreatmentGoalStatus @default(pending)
+
+  // Relations
+  treatmentPlan  TreatmentPlan @relation(fields: [treatmentPlanId], references: [treatmentPlanId])
+
+  @@map("treatment_goal")
+}
+
+enum TreatmentGoalStatus {
+  pending
+  achieved
+  missed
+}
+
+// ─── Medication ───────────────────────────────────────────────────────────────
+
+model Prescription {
+  prescriptionId        Int      @id @default(autoincrement())
+  patId                 Int
+  docId                 Int
+  prescriptionIssuedDate DateTime @db.Date
+  prescriptionNotes     String?
+  prescriptionCreatedAt DateTime @default(now())
+
+  // Relations
+  patient              Patient              @relation(fields: [patId], references: [patId])
+  doctor               Doctor               @relation(fields: [docId], references: [docId])
+  medicationSchedules  MedicationSchedule[]
+
+  @@map("prescription")
+}
+
+model MedicationSchedule {
+  medicationScheduleId        Int      @id @default(autoincrement())
+  prescriptionId              Int
+  medicationScheduleName      String   @db.VarChar(150)
+  medicationScheduleDosage    String   @db.VarChar(50)
+  medicationScheduleFrequency Int
+  medicationScheduleTimes     String   @db.VarChar(100)
+  medicationScheduleStartDate DateTime @db.Date
+  medicationScheduleEndDate   DateTime? @db.Date
+
+  // Relations
+  prescription    Prescription     @relation(fields: [prescriptionId], references: [prescriptionId])
+  medicationLogs  MedicationLog[]
+
+  @@map("medication_schedule")
+}
+
+model MedicationLog {
+  medicationLogId            Int                  @id @default(autoincrement())
+  medicationScheduleId       Int
+  medicationLogScheduledAt   DateTime
+  medicationLogTakenAt       DateTime?
+  medicationLogStatus        MedicationLogStatus  @default(pending)
+  medicationLogFollowUpSentAt DateTime?
+
+  // Relations
+  medicationSchedule MedicationSchedule @relation(fields: [medicationScheduleId], references: [medicationScheduleId])
+
+  @@map("medication_log")
+}
+
+enum MedicationLogStatus {
+  pending
+  taken
+  missed
+}
+
+// ─── Recovery ─────────────────────────────────────────────────────────────────
+
+model RecoveryLog {
+  recoveryLogId          Int      @id @default(autoincrement())
+  patId                  Int
+  recoveryLogDate        DateTime @db.Date
+  recoveryLogNotes       String?
+  recoveryLogMoodRating  Int?     @db.SmallInt
+  recoveryLogCreatedAt   DateTime @default(now())
+
+  // Relations
+  patient Patient @relation(fields: [patId], references: [patId])
+
+  @@unique([patId, recoveryLogDate])
+  @@map("recovery_log")
+}
+
+model DoctorNote {
+  doctorNoteId        Int      @id @default(autoincrement())
+  patId               Int
+  docId               Int
+  doctorNoteText      String
+  doctorNoteCreatedAt DateTime @default(now())
+
+  // Relations
+  patient Patient @relation(fields: [patId], references: [patId])
+  doctor  Doctor  @relation(fields: [docId], references: [docId])
+
+  @@map("doctor_note")
+}
+
+// ─── Appointments ─────────────────────────────────────────────────────────────
+
+model Appointment {
+  appointmentId        Int               @id @default(autoincrement())
+  patId                Int
+  docId                Int
+  appointmentDate      DateTime
+  appointmentStatus    AppointmentStatus @default(scheduled)
+  appointmentCreatedAt DateTime          @default(now())
+
+  // Relations
+  patient             Patient             @relation(fields: [patId], references: [patId])
+  doctor              Doctor              @relation(fields: [docId], references: [docId])
+  rescheduleRequests  RescheduleRequest[]
+
+  @@map("appointment")
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  completed
+  cancelled
+  rescheduled
+}
+
+model RescheduleRequest {
+  rescheduleRequestId            Int                    @id @default(autoincrement())
+  appointmentId                  Int
+  userId                         Int
+  rescheduleRequestDate          DateTime
+  rescheduleRequestReason        String?                @db.VarChar(255)
+  rescheduleRequestStatus        RescheduleRequestStatus @default(pending)
+  rescheduleRequestRespondedAt   DateTime?
+
+  // Relations
+  appointment Appointment @relation(fields: [appointmentId], references: [appointmentId])
+  user        UserAccount @relation(fields: [userId], references: [userId])
+
+  @@map("reschedule_request")
+}
+
+enum RescheduleRequestStatus {
+  pending
+  approved
+  declined
+}
+
+// ─── Notifications & Communication ───────────────────────────────────────────
+
+model Notification {
+  notificationId        Int      @id @default(autoincrement())
+  userId                Int
+  chatSessionId         Int?
+  notificationType      String   @db.VarChar(50)
+  notificationMessage   String
+  notificationIsRead    Boolean  @default(false)
+  notificationCreatedAt DateTime @default(now())
+
+  // Relations
+  user        UserAccount  @relation(fields: [userId], references: [userId])
+  chatSession ChatSession? @relation(fields: [chatSessionId], references: [chatSessionId])
+
+  @@map("notification")
+}
+
+model Announcement {
+  announcementId          Int       @id @default(autoincrement())
+  adminId                 Int
+  announcementTitle       String    @db.VarChar(150)
+  announcementContent     String
+  announcementPublishedAt DateTime?
+  announcementCreatedAt   DateTime  @default(now())
+
+  // Relations
+  admin Admin @relation(fields: [adminId], references: [adminId])
+
+  @@map("announcement")
+}
+
+// ─── AI Chatbot ───────────────────────────────────────────────────────────────
+
+model ChatSession {
+  chatSessionId           Int       @id @default(autoincrement())
+  patId                   Int
+  chatSessionExternalRef  String?   @db.VarChar(100)
+  chatSessionStartedAt    DateTime  @default(now())
+  chatSessionEndedAt      DateTime?
+  chatSessionHasCriticalFlag Boolean @default(false)
+  chatSessionSummary      String?
+
+  // Relations
+  patient       Patient        @relation(fields: [patId], references: [patId])
+  chatMessages  ChatMessage[]
+  notifications Notification[]
+
+  @@map("chat_session")
+}
+
+model ChatMessage {
+  chatMessageId   Int      @id @default(autoincrement())
+  chatSessionId   Int
+  role            MessageRole
+  content         String
+  createdAt       DateTime @default(now())
+
+  // Relations
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [chatSessionId])
+
+  @@map("chat_message")
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+model Report {
+  reportId          Int        @id @default(autoincrement())
+  patId             Int?
+  userId            Int
+  reportType        ReportType
+  reportGeneratedAt DateTime   @default(now())
+  reportFilePath    String     @db.VarChar(255)
+
+  // Relations
+  patient Patient?    @relation(fields: [patId], references: [patId])
+  user    UserAccount @relation(fields: [userId], references: [userId])
+
+  @@map("report")
+}
+
+enum ReportType {
+  recovery
+  systemWide
+}
+
+// ─── Admin Governance ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  auditLogId       Int      @id @default(autoincrement())
+  userId           Int
+  auditLogAction   String   @db.VarChar(50)
+  auditLogEntity   String   @db.VarChar(50)
+  auditLogEntityId Int?
+  auditLogTimestamp DateTime @default(now())
+  auditLogDetails  String?
+
+  // Relations
+  user UserAccount @relation(fields: [userId], references: [userId])
+
+  @@map("audit_log")
+}
+
+model SystemSetting {
+  systemSettingId        Int      @id @default(autoincrement())
+  systemSettingKey       String   @unique @db.VarChar(100)
+  systemSettingValue     String   @db.VarChar(255)
+  adminId                Int
+  systemSettingUpdatedAt DateTime @updatedAt
+
+  // Relations
+  admin Admin @relation(fields: [adminId], references: [adminId])
+
+  @@map("system_setting")
+}
